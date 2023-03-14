@@ -6,9 +6,9 @@
 
 #define WIFI_CHANNEL        1       // должен быть 1
 #define UNIT                1       // Идентификатор сенсора
-#define DEBUG_LOG                   // ключите (раскомментируйте), чтобы распечатать отладочную информацию. Отключение (комментарий) вывода отладки экономит около 4-5 мс...
+#define DEBUG_LOG                   // Включите (раскомментируйте), чтобы распечатать отладочную информацию. Отключение (комментарий) вывода отладки экономит около 4-5 мс...
 //ADC_MODE(ADC_VCC);                // Раскомментируйте, чтобы включить чтение Vcc (если плата не может читать VBAT).
-#define SLEEP_SECS        5*60-8    // [sec] Время сна между пробуждением и чтением. Будет 5 минут +/- 8 секунд. Варьируется, чтобы избежать передачи коллизий.
+#define SLEEP_SECS        5//5*60-8    // [sec] Время сна между пробуждением и чтением. Будет 5 минут +/- 8 секунд. Варьируется, чтобы избежать передачи коллизий.
 #define MAX_WAKETIME_MS   1000      // [ms]  Тайм-аут до принудительного перехода в сон, если отправка не удалась
 #define ONE_WIRE_BUS            15  // Измените на другой порт, если необходимо
 #define TEMPERATURE_PRECISION   12  // [9-12]. 12 => разрешение 0,0625C
@@ -20,7 +20,7 @@ OneWire oneWire (ONE_WIRE_BUS);                   // Настройте экзе
 DallasTemperature tempSensor(&oneWire);           // Передайте нашу ссылку oneWire на Dallas Temperature.
 DeviceAddress tempDeviceAddress;                  // Мы будем использовать эту переменную для хранения адреса найденного устройства.
 
-uint8_t Gateway_Mac[] = {0x02, 0x10, 0x11, 0x12, 0x13, 0x14};
+uint8_t Gateway_Mac[] = {0x30, 0xAE, 0xA4, 0xF1, 0xFD, 0xFC};
                                   // MAC адрес шлюза
 
 typedef struct sensor_data_t {    // Формат данных датчика для отправки по ESP-Now на шлюз
@@ -106,7 +106,11 @@ void setup()
   sensorData.unit = UNIT;
   sensorData.temp = tempSensor.getTempC(tempDeviceAddress);
 
+  // mock
+  sensorData.temp = random(10,30);
+  sensorData.Vbat = 3;
 
+ 
   // настраиваем ESP-Now ---------------------------
   WiFi.mode(WIFI_STA); // режим станции для сенсорного узла esp-now
   WiFi.disconnect();
@@ -131,6 +135,7 @@ void setup()
   memcpy(gateway.peer_addr, Gateway_Mac, 6);
   gateway.channel = WIFI_CHANNEL;
   gateway.encrypt = false;            // нет шифрования
+  gateway.ifidx = WIFI_IF_STA;
   esp_now_add_peer(&gateway);  
 
 

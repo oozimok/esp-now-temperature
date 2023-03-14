@@ -4,8 +4,6 @@
 sensor_data_t bufSensorData;        // buffer for incoming data
 sensor_data_t sensorData[UNITS+1];  // buffer for all sensor data
 
-uint8_t GatewayMac[] = {0x02, 0x10, 0x11, 0x12, 0x13, 0x14};
-
 WiFiMulti wifiMulti;
 
 WebServer server(80);
@@ -16,7 +14,7 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len)
   char macStr[24];
   snprintf(macStr, sizeof(macStr), " %02x:%02x:%02x:%02x:%02x:%02x",
            mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  //Serial.print("\nData received from: "); Serial.println(macStr);
+  Serial.print("\nData received from: "); Serial.println(macStr);
   memcpy(&bufSensorData, data, sizeof(bufSensorData));
 
   // Print data
@@ -76,7 +74,11 @@ void handleNotFound()
 void setupConnect()
 {
   WiFi.mode(WIFI_AP); 
-  esp_wifi_set_mac(WIFI_IF_STA, &GatewayMac[0]);
+  Serial.printf("My HW mac: %s", WiFi.macAddress().c_str());
+  Serial.println("");
+
+  wifi_config_t current_conf;
+  esp_wifi_get_config(WIFI_IF_STA, &current_conf);
   
   // Connect to WiFi ------------------------------
   Serial.print("Connecting to WiFi ");
@@ -142,6 +144,8 @@ void setupConnect()
 
 void mock(uint8_t index, long min, long max) 
 {
+    uint8_t GatewayMac[] = {0x30, 0xAE, 0xA4, 0xF1, 0xFD, 0xFC};
+
     strcpy (bufSensorData.ID, "Mock");
 
     bufSensorData.unit = index;
@@ -163,10 +167,10 @@ void loopConnect()
 {
   server.handleClient();
 
-  EVERY_N_SECONDS(INTERVAL_READ_SENSOR)
-  {
-    mock(_TEMP_1, 10, 40);
-    mock(_TEMP_2, 40, 90);
-  }
+  // EVERY_N_SECONDS(INTERVAL_READ_SENSOR)
+  // {
+  //   mock(_TEMP_1, 10, 40);
+  //   mock(_TEMP_2, 40, 90);
+  // }
 
 }
