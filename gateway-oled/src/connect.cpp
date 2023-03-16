@@ -2,7 +2,7 @@
 #include "everytime.h"
 
 sensor_data_t bufSensorData;        // buffer for incoming data
-sensor_data_t sensorData[UNITS+1];  // buffer for all sensor data
+sensor_data_t sensorData[CONFIG_UNITS+1];  // buffer for all sensor data
 
 WiFiMulti wifiMulti;
 
@@ -24,15 +24,15 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len)
   Serial.print (bufSensorData.unit);
   Serial.print ("  Temp: ");
   Serial.print (bufSensorData.temp);
-  Serial.print ("  Vbat: ");
-  Serial.print (bufSensorData.Vbat);
+  Serial.print ("  Battery: ");
+  Serial.print (bufSensorData.battery);
   Serial.print ("  Wake: ");
   Serial.print (bufSensorData.wakeTimeMS);
   Serial.println ("");
 
   // Store data
   int i = bufSensorData.unit;
-  if ( (i >= 1) && (i <= UNITS) ) {
+  if ( (i >= 1) && (i <= CONFIG_UNITS) ) {
     add_new_measure(i, bufSensorData);
     memcpy(&sensorData[i], data, sizeof(bufSensorData));
   };
@@ -42,11 +42,17 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len)
 void handleRoot()
 {
   String msg;
+  String id;
   msg = "{\"code\":200,";
   msg += "\"items\":[";
-  for (int i=1; i<=UNITS; i++) {
-    msg += "{\"unit\":"+String(i)+",\"temp:\":"+String(sensorData[i].temp) + ",\"battery:\":"+String(sensorData[i].Vbat)+"}";
-    msg += (UNITS > i) ? "," : "";
+  for (int i=1; i<=CONFIG_UNITS; i++) {
+    if (strlen(sensorData[i].ID) == 0) {
+      id = String(i);
+    } else {
+      id = sensorData[i].ID;
+    }
+    msg += "{\"id:\":\""+id+"\",\"unit\":"+String(i)+",\"temp:\":"+String(sensorData[i].temp)+",\"battery:\":"+String(sensorData[i].battery)+"}";
+    msg += (CONFIG_UNITS > i) ? "," : "";
   }
   msg += "]}";
   server.send(200, "application/json", msg);
@@ -86,7 +92,7 @@ void setupConnect()
   // Set device in AP mode to begin with
   WiFi.mode(WIFI_AP_STA);                         // AP _and_ STA is required (!IMPORTANT)
 
-  wifiMulti.addAP(SOFTAP_SSID, SOFTAP_PASS);      // I use wifiMulti ... just by habit, i guess ....
+  wifiMulti.addAP(WIFI_SSID, WIFI_PSWD);          // I use wifiMulti ... just by habit, i guess ....
   while (wifiMulti.run() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -107,8 +113,8 @@ void setupConnect()
 
   // Config gateway AP - set SSID and channel 
   int channel = WiFi.channel();
-  if (WiFi.softAP(SOFTAP_SSID, SOFTAP_PASS, channel, 1)) {
-    Serial.println("AP Config Success. AP SSID: " + String(SOFTAP_SSID));
+  if (WiFi.softAP(WIFI_SSID, WIFI_PSWD, channel, 1)) {
+    Serial.println("AP Config Success. AP SSID: " + String(WIFI_SSID));
   } else {
     Serial.println("AP Config failed.");
   }
@@ -150,7 +156,7 @@ void mock(uint8_t index, long min, long max)
 
     bufSensorData.unit = index;
     bufSensorData.temp = random(min, max);
-    bufSensorData.Vbat = 70;
+    bufSensorData.battery = 70;
 
     uint8_t sendBuf[sizeof(sensorData)];
     bufSensorData.wakeTimeMS = millis();

@@ -1,24 +1,45 @@
 #include <WiFi.h>
 #include <esp_now.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
 
 
 #define WIFI_CHANNEL        1       // должен быть 1
+#define UNIT_ID             31      // квартира
 #define UNIT                1       // Идентификатор сенсора
-#define DEBUG_LOG                   // Включите (раскомментируйте), чтобы распечатать отладочную информацию. Отключение (комментарий) вывода отладки экономит около 4-5 мс...
-//ADC_MODE(ADC_VCC);                // Раскомментируйте, чтобы включить чтение Vcc (если плата не может читать VBAT).
-#define SLEEP_SECS        5//5*60-8    // [sec] Время сна между пробуждением и чтением. Будет 5 минут +/- 8 секунд. Варьируется, чтобы избежать передачи коллизий.
+//#define DEBUG_LOG                   // Включите (раскомментируйте), чтобы распечатать отладочную информацию. Отключение (комментарий) вывода отладки экономит около 4-5 мс...
+#define SLEEP_SECS        5*60-8    // [sec] Время сна между пробуждением и чтением. Будет 5 минут +/- 8 секунд. Варьируется, чтобы избежать передачи коллизий.
 #define MAX_WAKETIME_MS   1000      // [ms]  Тайм-аут до принудительного перехода в сон, если отправка не удалась
+#define ADC_BATTERY_PIN         33  // Порт подключения измерителя напряжения батареи
+#define ADC_BATTERY_MAX_VOLTAGE 4.2 // Максимальное напряжение батареи
 #define ONE_WIRE_BUS            15  // Измените на другой порт, если необходимо
 #define TEMPERATURE_PRECISION   12  // [9-12]. 12 => разрешение 0,0625C
                       /* 12-битная точность:
                          1 бит для знака, 7 бит для целой части и 4 бита для дробной части (4 цифры после запятой)
                          Диапазон температур: от xxx,0000C до xxx,9375C с дискретным шагом 0,0625C.
                       */
+
+//#define SENSOR_DS18B20
+#define SENSOR_LM35
+#define SENSOR_LM35_PIN         35  // Порт подключения датчика температуры LM35
+
+#ifdef SENSOR_DS18B20
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
 OneWire oneWire (ONE_WIRE_BUS);                   // Настройте экземпляр oneWire для связи с любыми устройствами OneWire.
 DallasTemperature tempSensor(&oneWire);           // Передайте нашу ссылку oneWire на Dallas Temperature.
 DeviceAddress tempDeviceAddress;                  // Мы будем использовать эту переменную для хранения адреса найденного устройства.
+#endif
+
+#ifdef SENSOR_LM35
+#include "esp_adc_cal.h" 
+
+uint32_t readADC_Cal(int ADC_Raw)
+{
+  esp_adc_cal_characteristics_t adc_chars;
+  esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars);
+  return(esp_adc_cal_raw_to_voltage(ADC_Raw, &adc_chars));
+}
+#endif
 
 uint8_t Gateway_Mac[] = {0x30, 0xAE, 0xA4, 0xF1, 0xFD, 0xFC};
                                   // MAC адрес шлюза
@@ -26,20 +47,11 @@ uint8_t Gateway_Mac[] = {0x30, 0xAE, 0xA4, 0xF1, 0xFD, 0xFC};
 typedef struct sensor_data_t {    // Формат данных датчика для отправки по ESP-Now на шлюз
   int           unit;             // Номер блока для определения, какой датчик отправляет
   float         temp;             // Температура (Цельсия)
-  float         Vbat;             // Уровень напряжения батареи (Вольт)
+  float         battery;          // Уровень заряда батареи (Процент)
   char          ID[80];           // Любой открытый текст для идентификации устройства
   int           wakeTimeMS;       // Время пробуждения датчика до отправки данных
   unsigned long updated;          // Время epoch получения шлюзом. Устанавливается шлюзом/получателем. (Не используется датчиком, но является частью структуры для удобства.)
 } sensor_data_t;
-
-
-// -----------------------------------------------------------------------------------------
-//  BATTERY LEVEL CALIBRATION
-// -----------------------------------------------------------------------------------------
-#define CALIBRATION         4.21 / 4.35                       // Measured V by multimeter / reported (raw) V 
-                                                              // (Set to 1 if no calibration is needed/wanted)
-#define VOLTAGE_DIVIDER     (130+220+100)/100 * CALIBRATION   // D1 Mini Pro voltage divider to A0. 
-                                                              // May be different for other boards.
 
 
 // -----------------------------------------------------------------------------------------
@@ -65,7 +77,6 @@ void gotoSleep()
   esp_deep_sleep_start(); 
 }
 
-
 // -----------------------------------------------------------------------------------------
 void setup()
 // -----------------------------------------------------------------------------------------
@@ -75,50 +86,59 @@ void setup()
 
 
   #ifdef DEBUG_LOG
-  Serial.begin(115200);
-  while (!Serial) {};
-  Serial.println("\n\nStart");
+    Serial.begin(115200);
+    while (!Serial) {};
+    Serial.println("\n\nStart");
   #endif
 
-  // инициализация датчика/шины
-  //pinMode(ONE_WIRE_BUS, OUTPUT);     // используйте это, если используете режим PARASITE DS18B20 (vcc от линии передачи данных и, возможно, подтягивающий резистор ...)
-  tempSensor.begin();
-  tempSensor.getAddress(tempDeviceAddress, 0);
-  tempSensor.setResolution(tempDeviceAddress, TEMPERATURE_PRECISION);
-  tempSensor.requestTemperatures();
+  #ifdef SENSOR_DS18B20
+    // инициализация датчика/шины
+    //pinMode(ONE_WIRE_BUS, OUTPUT);     // используйте это, если используете режим PARASITE DS18B20 (vcc от линии передачи данных и, возможно, подтягивающий резистор ...)
+    tempSensor.begin();
+    tempSensor.getAddress(tempDeviceAddress, 0);
+    tempSensor.setResolution(tempDeviceAddress, TEMPERATURE_PRECISION);
+    tempSensor.requestTemperatures();
+  #endif
 
 
   // считываем напряжение батареи
-  int raw = analogRead(A0);
-  sensorData.Vbat = raw * VOLTAGE_DIVIDER / 1023.0;
-          // Альтернатива. Если не удается прочитать уровень заряда батареи на вашей плате, вместо этого прочитайте Vcc
-          // const float calVal = 0.001108; // 3,27/2950=0,001108. Vcc 3.27 на мультиметре, 2950 от getVcc()
-          // SensorData.Vbat = ESP.getVcc()/1023; // * calVal;
+  float reading = 0; 
+  for(int i = 0; i < 5; ++i) {
+    reading += analogRead(ADC_BATTERY_PIN);
+  }
+  reading /= 5;
+  float batteryLevelVoltage = reading * 3.307f / 4095.0f * ADC_BATTERY_MAX_VOLTAGE / 3.3f;   // рассчитываем текущий уровень напряжения
+  float batteryLevel = (reading - 2340.0f) * (100.0f - 0.0f) / (4095.0f - 2340.0f) + 0.0f;   // рассчитываем процентное значение
+  sensorData.battery = batteryLevel;
+
+
   #ifdef DEBUG_LOG
-  Serial.print("Battery voltage:"); Serial.print(sensorData.Vbat); Serial.println(" V");
+    Serial.print("Battery:"); Serial.print(batteryLevel); Serial.println(" %");
   #endif
 
+
   // скомпилировать сообщение для отправки
-  strcpy (sensorData.ID, "Apt");
-  strcat (sensorData.ID, " - ");
-  strcat (sensorData.ID, "31");
-
+  String(UNIT_ID).toCharArray(sensorData.ID, 80);
   sensorData.unit = UNIT;
-  sensorData.temp = tempSensor.getTempC(tempDeviceAddress);
+  
+  #ifdef SENSOR_DS18B20
+    sensorData.temp = tempSensor.getTempC(tempDeviceAddress);
+  #endif
 
-  // mock
-  sensorData.temp = random(10,30);
-  sensorData.Vbat = 3;
-
+  #ifdef SENSOR_LM35
+    int analogReadTemp = analogRead(SENSOR_LM35_PIN);
+    float voltageTemp = readADC_Cal(analogReadTemp); 
+    sensorData.temp = voltageTemp / 10;
+  #endif
  
   // настраиваем ESP-Now ---------------------------
   WiFi.mode(WIFI_STA); // режим станции для сенсорного узла esp-now
   WiFi.disconnect();
   #ifdef DEBUG_LOG
-  Serial.printf("My HW mac: %s", WiFi.macAddress().c_str());
-  Serial.println("");
-  Serial.printf("Sending to MAC: %02x:%02x:%02x:%02x:%02x:%02x", Gateway_Mac[0], Gateway_Mac[1], Gateway_Mac[2], Gateway_Mac[3], Gateway_Mac[4], Gateway_Mac[5]);
-  Serial.printf(", on channel: %i\n", WIFI_CHANNEL);
+    Serial.printf("My HW mac: %s", WiFi.macAddress().c_str());
+    Serial.println("");
+    Serial.printf("Sending to MAC: %02x:%02x:%02x:%02x:%02x:%02x", Gateway_Mac[0], Gateway_Mac[1], Gateway_Mac[2], Gateway_Mac[3], Gateway_Mac[4], Gateway_Mac[5]);
+    Serial.printf(", on channel: %i\n", WIFI_CHANNEL);
   #endif
 
   // инициализация ESP-Now ----------------------------
@@ -143,7 +163,7 @@ void setup()
     // обратный вызов для отправленного сообщения
     messageSent = true;         // флаг отправки сообщения - теперь мы можем спокойно идти спать...
     #ifdef DEBUG_LOG
-    Serial.printf("Message sent out, sendStatus = %i\n", sendStatus);
+      Serial.printf("Message sent out, sendStatus = %i\n", sendStatus);
     #endif
   });
 
@@ -151,12 +171,12 @@ void setup()
 
   // Send message -----------------------------------
   #ifdef DEBUG_LOG
-  Serial.println("Message Data: " + \
-                  String(sensorData.ID) + ", Unit:" + \
-                  String(sensorData.unit) + ", Temp:" + \
-                  String(sensorData.temp) + "C, Vbat:" + \
-                  String(sensorData.Vbat) \
-                );
+    Serial.println("Message Data: " + \
+      String(sensorData.ID) + ", Unit: " + \
+      String(sensorData.unit) + ", Temp: " + \
+      String(sensorData.temp) + ", Battery: " + \
+      String(sensorData.battery) \
+    );
   #endif
   uint8_t sendBuf[sizeof(sensorData)];          // создать буфер отправки для отправки данных датчика (безопаснее)
   sensorData.wakeTimeMS = millis();             // установить время пробуждения
@@ -165,8 +185,8 @@ void setup()
   esp_err_t result=esp_now_send(peer_addr, (uint8_t *) &sensorData, sizeof(sensorData)); 
   
   #ifdef DEBUG_LOG
-  Serial.print("Wake: "); Serial.print(sensorData.wakeTimeMS); Serial.println(" ms");
-  Serial.print("Sending result: "); Serial.println(result);
+    Serial.print("Wake: "); Serial.print(sensorData.wakeTimeMS); Serial.println(" ms");
+    Serial.print("Sending result: "); Serial.println(result);
   #endif
 }
 

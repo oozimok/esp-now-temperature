@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include <sensor.h>
 
-#define UNITS          2 
-
 // на экране 50 отсчетов через пиксель - всего 100 пикселей
 // отсчеты через 60 секунд, всего 50 минут
 #define TOTAL_MEASURES 50
@@ -26,7 +24,7 @@ struct SensorsMeasures
     // текущее значение температуры
     uint16_t current;
 
-    // текущее значение батареии
+    // текущее значение батареи
     uint16_t battery;
 
     // текущее значение current усреднится с предыдущим input
@@ -42,7 +40,7 @@ struct SensorsMeasures
 #define _TEMP_2 2
 
 // Данные измерений для главного модуля
-extern SensorsMeasures measures[UNITS+1];
+extern SensorsMeasures measures[CONFIG_UNITS+1];
 // данные для графика
 extern uint8_t samples[TOTAL_MEASURES];
 

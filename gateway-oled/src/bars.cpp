@@ -1,6 +1,6 @@
 #include "bars.h"
 
-SensorsMeasures measures[UNITS+1];
+SensorsMeasures measures[CONFIG_UNITS+1];
 
 // данные для графика
 uint8_t samples[TOTAL_MEASURES];
@@ -42,7 +42,7 @@ void update_measure_data()
 void add_new_measure(uint8_t index, sensor_data_t bufSensorData)
 {
     uint16_t t = (bufSensorData.temp == 0) ? 1 : bufSensorData.temp;
-    uint16_t b = (bufSensorData.Vbat == 0) ? 1 : bufSensorData.Vbat;
+    uint16_t b = (bufSensorData.battery == 0) ? 1 : bufSensorData.battery;
 
     t = (t > 300) ? 300 : t;
     b = (b > 100) ? 100 : b;

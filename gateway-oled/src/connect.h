@@ -4,9 +4,7 @@
 #include <WiFiMulti.h>
 #include <WebServer.h>
 #include "bars.h"
-
-#define SOFTAP_SSID       "PrimeTel-030"
-#define SOFTAP_PASS       "rQaZiYVLLk"
+#include "private.h"
 
 void initVariant();
 void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len);
